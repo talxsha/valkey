@@ -36,7 +36,7 @@ start_server {tags {"repl tls"} overrides {save {}}} {
             foreach replica_diskless_load {disabled on-empty-db swapdb flush-before-load} {
                 test "Skip RDB checksum sync - tls:$::tls, repl_diskless_sync:$primary_diskless_sync, repl_diskless_load:$replica_diskless_load" {
                     test_skip_rdb_checksum $primary $primary_host $primary_port $primary_skipped_rdb_checksum_counter $primary_diskless_sync $replica_diskless_load
-                }
+                } {} {cluster:skip}
             }
         }
     } else {
@@ -44,6 +44,6 @@ start_server {tags {"repl tls"} overrides {save {}}} {
         set replica_diskless_load on-empty-db
         test "Skip RDB checksum sync - tls:$::tls, repl_diskless_sync:$primary_diskless_sync, repl_diskless_load:$replica_diskless_load" {
             test_skip_rdb_checksum $primary $primary_host $primary_port $primary_skipped_rdb_checksum_counter $primary_diskless_sync $replica_diskless_load
-        }
+        } {} {cluster:skip}
     }
 }

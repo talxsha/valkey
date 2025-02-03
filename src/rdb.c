@@ -3572,7 +3572,7 @@ int rdbSaveToReplicasSockets(int req, rdbSaveInfo *rsi) {
     }
     /*
      * For replicas with repl_state == REPLICA_STATE_WAIT_BGSAVE_END and replica_req == req:
-     * Check replica capabilities, if every replica supports skiping RDB checksum, primary should also skip checksum.
+     * Check replica capabilities, if every replica supports skipping RDB checksum, primary should also skip checksum.
      * Otherwise, use checksum for this RDB transfer.
      */
     int skip_rdb_checksum = 1;
@@ -3688,7 +3688,7 @@ int rdbSaveToReplicasSockets(int req, rdbSaveInfo *rsi) {
             }
         } else {
             serverLog(LL_NOTICE, "Background RDB transfer started by pid %ld to %s%s", (long)childpid,
-                      dual_channel ? "direct socket to replica" : "pipe through parent process", 
+                      dual_channel ? "direct socket to replica" : "pipe through parent process",
                       skip_rdb_checksum ? " while skipping RDB checksum for this transfer" : "");
 
             server.rdb_save_time_start = time(NULL);

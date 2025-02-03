@@ -453,9 +453,9 @@ typedef enum {
 
 /* Replica capability flags */
 #define REPLICA_CAPA_NONE 0
-#define REPLICA_CAPA_EOF (1 << 0)          /* Can parse the RDB EOF streaming format. */
-#define REPLICA_CAPA_PSYNC2 (1 << 1)       /* Supports PSYNC2 protocol. */
-#define REPLICA_CAPA_DUAL_CHANNEL (1 << 2) /* Supports dual channel replication sync */
+#define REPLICA_CAPA_EOF (1 << 0)               /* Can parse the RDB EOF streaming format. */
+#define REPLICA_CAPA_PSYNC2 (1 << 1)            /* Supports PSYNC2 protocol. */
+#define REPLICA_CAPA_DUAL_CHANNEL (1 << 2)      /* Supports dual channel replication sync */
 #define REPLICA_CAPA_SKIP_RDB_CHECKSUM (1 << 3) /* Supports skipping RDB checksum for sync requests. */
 
 /* Replica capability strings */
