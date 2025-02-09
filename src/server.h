@@ -120,7 +120,6 @@ struct hdr_histogram;
 #define CONFIG_DEFAULT_HZ 10 /* Time interrupt calls/sec. */
 #define CONFIG_MIN_HZ 1
 #define CONFIG_MAX_HZ 500
-#define MAX_CLIENTS_PER_CLOCK_TICK 200 /* HZ is adapted based on that. */
 #define CRON_DBS_PER_CALL 16
 #define CRON_DICTS_PER_DB 16
 #define NET_MAX_WRITES_PER_EVENT (1024 * 64)
@@ -1566,12 +1565,9 @@ struct valkeyServer {
     char *configfile;         /* Absolute config file path, or NULL */
     char *executable;         /* Absolute executable file path. */
     char **exec_argv;         /* Executable argv vector (copy). */
-    int dynamic_hz;           /* Change hz value depending on # of clients. */
-    int config_hz;            /* Configured HZ value. May be different than
-                                 the actual 'hz' field value if dynamic-hz
-                                 is enabled. */
     mode_t umask;             /* The umask value of the process on startup */
     int hz;                   /* serverCron() calls frequency in hertz */
+    int clients_hz;           /* clientsTimeProc() frequency in hertz */
     int in_fork_child;        /* indication that this is a fork child */
     serverDb *db;
     hashtable *commands;      /* Command table */
@@ -2464,12 +2460,13 @@ struct serverCommand {
 
     /* Runtime populated data */
     long long microseconds, calls, rejected_calls, failed_calls;
-    int id;       /* Command ID. This is a progressive ID starting from 0 that
-                     is assigned at runtime, and is used in order to check
-                     ACLs. A connection is able to execute a given command if
-                     the user associated to the connection has this command
-                     bit set in the bitmap of allowed commands. */
-    sds fullname; /* A SDS string representing the command fullname. */
+    int id;           /* Command ID. This is a progressive ID starting from 0 that
+                         is assigned at runtime, and is used in order to check
+                         ACLs. A connection is able to execute a given command if
+                         the user associated to the connection has this command
+                         bit set in the bitmap of allowed commands. */
+    sds fullname;     /* Includes parent name if any: "parentcmd|childcmd". Unchanged if command is renamed. */
+    sds current_name; /* Same as fullname, becomes a separate string if command is renamed. */
     struct hdr_histogram
         *latency_histogram;        /* Points to the command latency command histogram (unit of time nanosecond). */
     keySpec legacy_range_key_spec; /* The legacy (first,last,step) key spec is
@@ -2736,7 +2733,8 @@ void pauseActions(pause_purpose purpose, mstime_t end, uint32_t actions);
 void unpauseActions(pause_purpose purpose);
 uint32_t isPausedActions(uint32_t action_bitmask);
 uint32_t isPausedActionsWithUpdate(uint32_t action_bitmask);
-mstime_t getPausedActionTimeout(uint32_t action);
+char *getPausedReason(pause_purpose purpose);
+mstime_t getPausedActionTimeout(uint32_t action, pause_purpose *purpose);
 void updatePausedActions(void);
 void unblockPostponedClients(void);
 void processEventsWhileBlocked(void);
@@ -3046,7 +3044,6 @@ int ACLAuthenticateUser(client *c, robj *username, robj *password, robj **err);
 int checkModuleAuthentication(client *c, robj *username, robj *password, robj **err);
 void addAuthErrReply(client *c, robj *err);
 unsigned long ACLGetCommandID(sds cmdname);
-void ACLClearCommandID(void);
 user *ACLGetUserByName(const char *name, size_t namelen);
 int ACLUserCheckKeyPerm(user *u, const char *key, int keylen, int flags);
 int ACLUserCheckChannelPerm(user *u, sds channel, int literal);
@@ -3060,7 +3057,6 @@ int ACLAddCommandCategory(const char *name, uint64_t flag);
 void ACLCleanupCategoriesOnFailure(size_t num_acl_categories_added);
 int ACLAppendUserForLoading(sds *argv, int argc, int *argc_err);
 const char *ACLSetUserStringError(void);
-int ACLLoadConfiguredUsers(void);
 robj *ACLDescribeUser(user *u);
 void ACLLoadUsersAtStartup(void);
 void addReplyCommandCategories(client *c, struct serverCommand *cmd);

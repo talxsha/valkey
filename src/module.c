@@ -1403,6 +1403,7 @@ ValkeyModuleCommand *moduleCreateCommandProxy(struct ValkeyModule *module,
     cp->serverCmd = zcalloc(sizeof(*serverCmd));
     cp->serverCmd->declared_name = declared_name; /* SDS for module commands */
     cp->serverCmd->fullname = fullname;
+    cp->serverCmd->current_name = fullname;
     cp->serverCmd->group = COMMAND_GROUP_MODULE;
     cp->serverCmd->proc = ValkeyModuleCommandDispatcher;
     cp->serverCmd->flags = flags | CMD_MODULE;
@@ -8982,6 +8983,9 @@ void VM_RegisterClusterMessageReceiver(ValkeyModuleCtx *ctx,
 /* Send a message to all the nodes in the cluster if `target` is NULL, otherwise
  * at the specified target, which is a VALKEYMODULE_NODE_ID_LEN bytes node ID, as
  * returned by the receiver callback or by the nodes iteration functions.
+ *
+ * In Valkey 8.1 and later, the cluster protocol overhead for this message is
+ * ~30B, to compare with earlier versions where it's ~2KB.
  *
  * The function returns VALKEYMODULE_OK if the message was successfully sent,
  * otherwise if the node is not connected or such node ID does not map to any
