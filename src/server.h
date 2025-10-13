@@ -520,7 +520,6 @@ typedef enum {
 #define SUPERVISED_UPSTART 3
 
 #define ZSKIPLIST_MAXLEVEL 32 /* Should be enough for 2^64 elements */
-#define ZSKIPLIST_P 0.25      /* Skiplist P = 1/4 */
 #define ZSKIPLIST_MAX_SEARCH 10
 
 /* Append only defines */
@@ -1410,9 +1409,10 @@ struct sharedObjectsStruct {
         *execaborterr, *noautherr, *noreplicaserr, *busykeyerr, *oomerr, *plus, *messagebulk, *pmessagebulk,
         *subscribebulk, *unsubscribebulk, *psubscribebulk, *punsubscribebulk, *del, *unlink, *rpop, *lpop, *lpush,
         *rpoplpush, *lmove, *blmove, *zpopmin, *zpopmax, *emptyscan, *multi, *exec, *left, *right, *hset, *hdel, *hpexpireat, *hpersist, *srem,
-        *xgroup, *xclaim, *script, *replconf, *eval, *persist, *set, *pexpireat, *pexpire, *time, *pxat, *absttl,
+        *xgroup, *xclaim, *script, *replconf, *eval, *cluster, *syncslots, *persist, *set, *pexpireat, *pexpire, *time, *pxat, *absttl,
         *retrycount, *force, *justid, *entriesread, *lastid, *ping, *setid, *keepttl, *load, *createconsumer, *getack,
         *special_asterisk, *special_equals, *default_username, *redacted, *ssubscribebulk, *sunsubscribebulk, *fields,
+        *finish, *state, *success, *failed, *name, *message,
         *smessagebulk, *select[PROTO_SHARED_SELECT_CMDS], *integers[OBJ_SHARED_INTEGERS],
         *mbulkhdr[OBJ_SHARED_BULKHDR_LEN], /* "*<value>\r\n" */
         *bulkhdr[OBJ_SHARED_BULKHDR_LEN],  /* "$<value>\r\n" */
@@ -1652,12 +1652,15 @@ typedef struct {
 #define CHILD_TYPE_AOF 2
 #define CHILD_TYPE_LDB 3
 #define CHILD_TYPE_MODULE 4
+#define CHILD_TYPE_SLOT_MIGRATION 5
 
 typedef enum childInfoType {
     CHILD_INFO_TYPE_CURRENT_INFO,
     CHILD_INFO_TYPE_AOF_COW_SIZE,
     CHILD_INFO_TYPE_RDB_COW_SIZE,
-    CHILD_INFO_TYPE_MODULE_COW_SIZE
+    CHILD_INFO_TYPE_MODULE_COW_SIZE,
+    CHILD_INFO_TYPE_SLOT_MIGRATION_COW_SIZE,
+    CHILD_INFO_TYPE_REPL_OUTPUT_BYTES
 } childInfoType;
 
 struct valkeyServer {
@@ -1833,6 +1836,7 @@ struct valkeyServer {
     size_t stat_rdb_cow_bytes;                          /* Copy on write bytes during RDB saving. */
     size_t stat_aof_cow_bytes;                          /* Copy on write bytes during AOF rewrite. */
     size_t stat_module_cow_bytes;                       /* Copy on write bytes during module fork. */
+    size_t stat_slot_migration_cow_bytes;               /* Copy on write bytes during slot migration fork. */
     double stat_module_progress;                        /* Module save progress. */
     size_t stat_clients_type_memory[CLIENT_TYPE_COUNT]; /* Mem usage by type */
     size_t stat_cluster_links_memory;                   /* Mem usage by cluster links */
@@ -2196,6 +2200,8 @@ struct valkeyServer {
     int cluster_announce_port;                             /* base port to announce on cluster bus. */
     int cluster_announce_tls_port;                         /* TLS port to announce on cluster bus. */
     int cluster_announce_bus_port;                         /* bus port to announce on cluster bus. */
+    int cluster_announce_client_port;                      /* TCP port for clients to announce on cluster bus. */
+    int cluster_announce_client_tls_port;                  /* TLS port for clients to announce on cluster bus. */
     int cluster_module_flags;                              /* Set of flags that modules are able
                                                               to set in order to suppress certain
                                                               native Redis Cluster features. Check the
@@ -2215,6 +2221,11 @@ struct valkeyServer {
                                                             * migrations. */
     ssize_t slot_migration_max_failover_repl_bytes;        /* Maximum amount of in flight bytes for a slot migration
                                                             * failover to be attempted. */
+    int slot_migration_pipe_read;                          /* Slot migration pipe used to transfer the slots data */
+    int slot_migration_child_exit_pipe;                    /* Used by the slot migration parent allow child exit. */
+    connection *slot_migration_pipe_conn;                  /* xxxx */
+    char *slot_migration_pipe_buff;                        /* In slot migration, this buffer holds slot snapshot data. */
+    ssize_t slot_migration_pipe_bufflen;                   /* that was read from the rdb pipe. */
     /* Debug config that goes along with cluster_drop_packet_filter. When set, the link is closed on packet drop. */
     uint32_t debug_cluster_close_link_on_packet_drop : 1;
     /* Debug config to control the random ping. When set, we will disable the random ping in clusterCron. */
@@ -2229,6 +2240,8 @@ struct valkeyServer {
     mstime_t busy_reply_threshold;  /* Script / module timeout in milliseconds */
     int pre_command_oom_state;      /* OOM before command (script?) was started */
     int script_disable_deny_script; /* Allow running commands marked "noscript" inside a script. */
+    int lua_enable_insecure_api;    /* Config to enable insecure api */
+    int lua_insecure_api_current;   /* Current value of if insecure apis are enabled, used to determine if flush is needed. */
     /* Lazy free */
     int lazyfree_lazy_eviction;
     int lazyfree_lazy_expire;
@@ -2258,10 +2271,11 @@ struct valkeyServer {
     serverUnixContextConfig unix_ctx_config;
     serverRdmaContextConfig rdma_ctx_config;
     /* cpu affinity */
-    char *server_cpulist;      /* cpu affinity list of server main/io thread. */
-    char *bio_cpulist;         /* cpu affinity list of bio thread. */
-    char *aof_rewrite_cpulist; /* cpu affinity list of aof rewrite process. */
-    char *bgsave_cpulist;      /* cpu affinity list of bgsave process. */
+    char *server_cpulist;         /* cpu affinity list of server main/io thread. */
+    char *bio_cpulist;            /* cpu affinity list of bio thread. */
+    char *aof_rewrite_cpulist;    /* cpu affinity list of aof rewrite process. */
+    char *bgsave_cpulist;         /* cpu affinity list of bgsave process. */
+    char *slot_migration_cpulist; /* cpu affinity list of slot migration process. */
     /* Sentinel config */
     struct sentinelConfig *sentinel_config; /* sentinel config to load at startup time. */
     /* Coordinate failover info */
@@ -3070,7 +3084,7 @@ void replicationStartPendingFork(void);
 void replicationHandlePrimaryDisconnection(void);
 void replicationCachePrimary(client *c);
 void resizeReplicationBacklog(void);
-void replicationSetPrimary(char *ip, int port, int full_sync_required);
+void replicationSetPrimary(char *ip, int port, int full_sync_required, bool disconnect_blocked);
 void replicationUnsetPrimary(void);
 void refreshGoodReplicasCount(void);
 int checkGoodReplicasStatus(void);
@@ -3096,7 +3110,8 @@ void showLatestBacklog(void);
 void rdbPipeReadHandler(struct aeEventLoop *eventLoop, int fd, void *clientData, int mask);
 void rdbPipeWriteHandlerConnRemoved(struct connection *conn);
 int rdbRegisterAuxField(char *auxfield, rdbAuxFieldEncoder encoder, rdbAuxFieldDecoder decoder);
-void clearFailoverState(void);
+void slotMigrationPipeReadHandler(struct aeEventLoop *eventLoop, int fd, void *clientData, int mask);
+void clearFailoverState(bool success);
 void updateFailoverStatus(void);
 void abortFailover(const char *err);
 const char *getFailoverStateString(void);
@@ -3154,7 +3169,7 @@ int rewriteSlotToAppendOnlyFileRio(rio *aof, int db_num, int hashslot, size_t *k
 /* Child info */
 void openChildInfoPipe(void);
 void closeChildInfoPipe(void);
-void sendChildInfoGeneric(childInfoType info_type, size_t keys, double progress, char *pname);
+void sendChildInfoGeneric(childInfoType info_type, size_t keys, size_t repl_output_bytes, double progress, char *pname);
 void sendChildCowInfo(childInfoType info_type, char *pname);
 void sendChildInfo(childInfoType info_type, size_t keys, char *pname);
 void receiveChildInfo(void);
@@ -3198,7 +3213,6 @@ typedef enum {
 
 int ACLCheckUserCredentials(robj *username, robj *password);
 int ACLAuthenticateUser(client *c, robj *username, robj *password, robj **err);
-int checkModuleAuthentication(client *c, robj *username, robj *password, robj **err);
 void addAuthErrReply(client *c, robj *err);
 unsigned long ACLGetCommandID(sds cmdname);
 user *ACLGetUserByName(const char *name, size_t namelen);
@@ -3337,6 +3351,7 @@ int abortShutdown(void);
 void afterCommand(client *c);
 int isReplicatedClient(client *c);
 int mustObeyClient(client *c);
+bool clientSupportStandAloneRedirect(client *c);
 #ifdef __GNUC__
 void _serverLog(int level, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
 void serverLogFromHandler(int level, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
@@ -3707,7 +3722,7 @@ void queueClientForReprocessing(client *c);
 int blockedClientMayTimeout(client *c);
 void replyToBlockedClientTimedOut(client *c);
 int getTimeoutFromObjectOrReply(client *c, robj *object, mstime_t *timeout, int unit);
-void disconnectAllBlockedClients(void);
+void disconnectOrRedirectAllBlockedClients(void);
 void handleClientsBlockedOnKeys(void);
 void signalKeyAsReady(serverDb *db, robj *key, int type);
 void blockForKeys(client *c, int btype, robj **keys, int numkeys, mstime_t timeout, int unblock_on_nokey);
